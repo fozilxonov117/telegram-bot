@@ -3,14 +3,25 @@ import gspread
 from datetime import datetime
 from oauth2client.service_account import ServiceAccountCredentials
 from telebot import types
+import json
+import os
 
-BOT_TOKEN = "8367906512:AAGFZLy2L5Bnv4iM5VaO1J8x6L6cxfOqiTc"
+# === 🔐 1. TOKENLAR VA KALITLARNI ENVIRONMENT'DAN OLYAPMIZ ===
+BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Render environment'dan olinadi
+GOOGLE_CREDS = os.environ.get("GOOGLE_CREDS")  # service_account.json matni
 
+if not BOT_TOKEN or not GOOGLE_CREDS:
+    print("❌ Xato: BOT_TOKEN yoki GOOGLE_CREDS topilmadi. Render environment'ni tekshiring.")
+    exit()
+
+# === 🔐 2. Google Sheets ulanmasi (Render uchun mos shakl) ===
 SCOPE = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-CREDS = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", SCOPE)
+creds_dict = json.loads(GOOGLE_CREDS)
+CREDS = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPE)
 client = gspread.authorize(CREDS)
 sheet = client.open("Tikuvchilar Hisoboti").worksheet("Kunlik hisobot")
 
+# === 3. Ma'lumotlar bazasi ===
 EMPLOYEES = {
     "1656876161": "Ziyoda",
     "7643816702": "Muhayyo",
@@ -28,6 +39,7 @@ TIKUVCHI_PRICES = {
     "rashma": 700,
     "kant": 1000
 }
+
 QADOQ_PRICES = {
     "dvoyka": 1500,
     "troyka": 2000,
@@ -37,6 +49,7 @@ QADOQ_PRICES = {
 STATE = {}
 bot = telebot.TeleBot(BOT_TOKEN)
 
+# === 4. Klaviaturalar ===
 def role_keyboard():
     kb = types.InlineKeyboardMarkup()
     kb.add(
@@ -63,6 +76,7 @@ def confirm_keyboard():
 def reset_state(uid):
     STATE[uid] = {"stage": "role", "role": None, "type": None, "count": None, "price": None}
 
+# === 5. Google Sheets yordamchi funksiyalar ===
 def can_submit_today(uid):
     today = datetime.now().strftime("%Y-%m-%d")
     records = sheet.get_all_records()
@@ -75,6 +89,7 @@ def append_row(uid, name, role, product, count, price):
     row = [today, name, uid, role.capitalize(), product, count, price, total, time_now]
     sheet.append_row(row)
 
+# === 6. Bot komandalar va handlerlar ===
 @bot.message_handler(commands=['start'])
 def start(msg):
     uid = str(msg.chat.id)
@@ -82,8 +97,7 @@ def start(msg):
         bot.send_message(uid, "⚠️ Siz ro‘yxatda yo‘qsiz. Admin bilan bog‘laning.")
         return
     reset_state(uid)
-    remove_kb = types.ReplyKeyboardRemove()
-    bot.send_message(uid, "👋 Salom! Rolingizni tanlang:", reply_markup=remove_kb)
+    bot.send_message(uid, "👋 Salom! Rolingizni tanlang:", reply_markup=types.ReplyKeyboardRemove())
     bot.send_message(uid, "Tanlang:", reply_markup=role_keyboard())
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("role:"))
@@ -101,10 +115,11 @@ def choose_type(call):
     product = call.data.split(":")[1]
     price = (TIKUVCHI_PRICES if role == "tikuvchi" else QADOQ_PRICES)[product]
     STATE[uid].update({"type": product, "price": price, "stage": "count"})
+    kb = types.InlineKeyboardMarkup()
+    kb.add(types.InlineKeyboardButton("🔙 Orqaga", callback_data="back:type"))
     bot.edit_message_text(
         f"✍️ {product} uchun nechta dona kiriting.\n💵 1 dona: {price:,} so‘m",
-        call.message.chat.id, call.message.id, reply_markup=types.InlineKeyboardMarkup().add(
-            types.InlineKeyboardButton("🔙 Orqaga", callback_data="back:type"))
+        call.message.chat.id, call.message.id, reply_markup=kb
     )
 
 @bot.callback_query_handler(func=lambda c: c.data.startswith("back:"))
@@ -165,5 +180,5 @@ def input_count(msg):
 def fallback(msg):
     bot.send_message(msg.chat.id, "ℹ️ Avval /start yuboring.")
 
-print("🤖 Bot ishga tushdi...")
-bot.polling(none_stop=True)
+print("🤖 Bot Render.com’da ishga tushdi...")
+bot.infinity_polling(timeout=10, long_polling_timeout=5)
