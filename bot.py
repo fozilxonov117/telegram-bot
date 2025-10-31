@@ -5,6 +5,8 @@ from oauth2client.service_account import ServiceAccountCredentials
 from telebot import types
 import json
 import os
+from datetime import datetime, timedelta, timezone
+
 
 # === 🔐 1. TOKENLAR VA KALITLARNI ENVIRONMENT'DAN OLYAPMIZ ===
 BOT_TOKEN = os.environ.get("BOT_TOKEN")  # Render environment'dan olinadi
@@ -82,12 +84,17 @@ def can_submit_today(uid):
     records = sheet.get_all_records()
     return sum(1 for r in records if str(r.get("Telegram ID")) == uid and str(r.get("Sana")) == today) < 2
 
+
 def append_row(uid, name, role, product, count, price):
-    today = datetime.now().strftime("%Y-%m-%d")
-    time_now = datetime.now().strftime("%H:%M:%S")
+    # 🕒 Toshkent vaqti (UTC+5)
+    tashkent_tz = timezone(timedelta(hours=5))
+    today = datetime.now(tashkent_tz).strftime("%Y-%m-%d")
+    time_now = datetime.now(tashkent_tz).strftime("%H:%M:%S")
+
     total = count * price
     row = [today, name, uid, role.capitalize(), product, count, price, total, time_now]
     sheet.append_row(row)
+
 
 # === 6. Bot komandalar va handlerlar ===
 @bot.message_handler(commands=['start'])
